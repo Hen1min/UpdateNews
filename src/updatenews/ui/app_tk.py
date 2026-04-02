@@ -1,4 +1,7 @@
 import customtkinter as ctk
+from pathlib import Path
+import json
+
 
 
 class UpdateNewsApp(ctk.CTk):
@@ -131,8 +134,57 @@ class UpdateNewsApp(ctk.CTk):
         self.select_vars = {}  # 编辑模式下每个URL对应一个BooleanVar（用于多选）
         self.url_rows = []  # 每行保存 {"url": str, "row": frame}
 
+        data = self._load_urls()
+        self.urls = data.get("urls", [])
+        saved_active = data.get("active", "")
+
+        if saved_active and saved_active in self.urls:
+            self.active_url_var.set(saved_active)
+        elif self.urls:
+            # 按你的要求：默认选中第一个
+            self.active_url_var.set(self.urls[0])
+        else:
+            self.active_url_var.set("")
+
         self._refresh_url_list()
         self._set_page(page)
+
+    def _data_file(self) -> Path:
+        # app_tk.py 位于: .../src/updatenews/ui/app_tk.py
+        # parents[0]=ui, [1]=updatenews, [2]=src, [3]=项目根(UpdateNews)
+        return Path(__file__).resolve().parents[3] / "urls.json"
+
+    def _load_urls(self) -> dict:
+        p = self._data_file()
+        if not p.exists():
+            return {"urls": [], "active": ""}
+
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {"urls": [], "active": ""}
+
+        if not isinstance(data, dict):
+            return {"urls": [], "active": ""}
+
+        urls = data.get("urls", [])
+        active = data.get("active", "")
+
+        if not isinstance(urls, list):
+            urls = []
+        if not isinstance(active, str):
+            active = ""
+
+        urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+        return {"urls": urls, "active": active.strip()}
+
+    def _save_urls(self) -> None:
+        p = self._data_file()
+        data = {
+            "urls": list(self.urls),
+            "active": self.active_url_var.get().strip()
+        }
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _toggle_edit_mode(self):
         # 切换模式
@@ -165,6 +217,7 @@ class UpdateNewsApp(ctk.CTk):
         if len(self.urls) == 1:
             self.active_url_var.set(url)
 
+        self._save_urls()
         self._refresh_url_list()
 
     # ✅ 修改1：删除逻辑（满足：编辑模式删除后自动回到单选，并默认运行第一条）
@@ -192,6 +245,7 @@ class UpdateNewsApp(ctk.CTk):
             else:
                 self.active_url_var.set("")
 
+            self._save_urls()
             self._refresh_url_list()
             return
 
@@ -209,6 +263,7 @@ class UpdateNewsApp(ctk.CTk):
         else:
             self.active_url_var.set("")
 
+        self._save_urls()
         self._refresh_url_list()
 
     def _on_active_changed(self):
@@ -217,6 +272,8 @@ class UpdateNewsApp(ctk.CTk):
             self.status_label.configure(text=f"状态：{len(self.urls)} 条 URL（未选择监控目标）")
         else:
             self.status_label.configure(text=f"状态：{len(self.urls)} 条 URL（当前监控：{active}）")
+
+        self._save_urls()
 
     # ✅ 修改2：状态/刷新逻辑（编辑模式显示提示；单选模式显示 active）
     def _refresh_url_list(self):
