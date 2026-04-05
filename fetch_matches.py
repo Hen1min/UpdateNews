@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -74,6 +74,17 @@ def main():
         print("top keys:", list(data.keys()))
         return
 
+    TZ_CN = timezone(timedelta(hours=8))
+
+    # “今天12:00”（按本机当前日期，固定北京时间）
+    now_cn = datetime.now(TZ_CN)
+    today_12 = now_cn.replace(hour=12, minute=0, second=0, microsecond=0)
+
+    # 如果现在还没到12点，那么“今天12点”其实是未来；按你的业务一般是到点触发
+    # 但为了手动运行也合理：若当前<12点，就用“昨天12点~今天12点(当前日期)”这个窗口
+    end = today_12
+    start = end - timedelta(days=1)
+
     parsed_rows: List[Tuple[datetime, str]] = []
 
     for m in matches:
@@ -86,6 +97,13 @@ def main():
         group = m.get("groupName", "")
         when_raw = m.get("matchDate", "")
         dt = parse_match_datetime(when_raw)
+
+        if not dt:
+            continue  # 没有时间的记录先不处理
+
+        # 只保留 [start, end) 这个时间窗内的比赛
+        if not (start <= dt < end):
+            continue
 
         # 队伍信息（有些记录 teamA/teamB 可能不存在）
         a = team_short(m.get("teamA"), fallback="TBD_A")
