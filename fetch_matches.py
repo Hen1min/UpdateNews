@@ -82,8 +82,8 @@ def main():
 
     # 如果现在还没到12点，那么“今天12点”其实是未来；按你的业务一般是到点触发
     # 但为了手动运行也合理：若当前<12点，就用“昨天12点~今天12点(当前日期)”这个窗口
-    end = today_12
-    start = end - timedelta(days=1)
+    end = now_cn
+    start = today_12 - timedelta(days=1)
 
     parsed_rows: List[Tuple[datetime, str]] = []
 
@@ -125,7 +125,7 @@ def main():
         if group:
             extra = f" | {group}"
 
-        line = f"{time_part}{extra} | {title} | {a} {score_a}:{score_b} {b} | {st} | bMatchId={bmatch_id}"
+        line = f"{time_part}{extra} | {title} | {a} {score_a}:{score_b} {b} | {st}" # | bMatchId={bmatch_id}
 
         # 有 dt 才参与排序，否则放最后
         if dt:
