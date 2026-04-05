@@ -1,7 +1,0 @@
-{
-  "urls": [
-    "https://example.com/rss",
-    "https://another.com/feed"
-  ],
-  "active": "https://example.com/rss"
-}
