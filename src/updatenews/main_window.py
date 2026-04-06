@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog
+from tkinter import ttk
 
 from .storage import load_receivers, save_receivers
 
@@ -25,8 +26,31 @@ class MainWindow(tk.Tk):
         mid.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
         # 左：账号列表
-        self.listbox = tk.Listbox(mid, selectmode=tk.EXTENDED)  # 支持多选
-        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.manage_mode = False
+        self.checked = set()  # 存 receiver 字符串
+
+        tree_wrap = tk.Frame(mid)
+        tree_wrap.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.tree = ttk.Treeview(
+            tree_wrap,
+            columns=("check", "qq"),
+            show="headings",
+            selectmode="browse",  # 单选即可，多选靠勾选
+        )
+        self.tree.heading("check", text="")
+        self.tree.heading("qq", text="接收方QQ")
+        self.tree.column("check", width=40, anchor="center", stretch=False)
+        self.tree.column("qq", width=400, anchor="w")
+
+        ysb = ttk.Scrollbar(tree_wrap, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=ysb.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ysb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 点击切换勾选
+        self.tree.bind("<Button-1>", self.on_tree_click)
 
         # 右：操作按钮
         op = tk.Frame(mid, width=200)
@@ -52,16 +76,21 @@ class MainWindow(tk.Tk):
         tk.Button(bottom, text="帮助", height=2, command=self.show_help).pack(side=tk.RIGHT)
 
         # 初始化列表
-        self.refresh_listbox()
+        self.refresh_tree()
 
         # 关闭确认
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # ---------- 数据/列表 ----------
-    def refresh_listbox(self):
-        self.listbox.delete(0, tk.END)
-        for r in self.receivers:
-            self.listbox.insert(tk.END, r)
+    def refresh_tree(self):
+        self.tree.delete(*self.tree.get_children())
+        for qq in self.receivers:
+            if self.manage_mode:
+                mark = "☑" if qq in self.checked else "☐"
+            else:
+                mark = ""
+            # 注意：iid 用 qq 字符串，要求 qq 不能重复（你已经做了去重）
+            self.tree.insert("", tk.END, iid=qq, values=(mark, qq))
 
     def persist(self):
         save_receivers(RECEIVERS_FILE, self.receivers)
@@ -79,37 +108,60 @@ class MainWindow(tk.Tk):
             return
         self.receivers.append(qq)
         self.persist()
-        self.refresh_listbox()
+        self.refresh_tree()
 
     def delete_selected(self):
-        sel = list(self.listbox.curselection())
+        if self.manage_mode:
+            if not self.checked:
+                messagebox.showwarning("提示", "请先勾选要删除的账号。")
+                return
+            if not messagebox.askyesno("确认", f"确定删除勾选的 {len(self.checked)} 个账号吗？"):
+                return
+            self.receivers = [r for r in self.receivers if r not in self.checked]
+            self.checked.clear()
+            self.persist()
+            self.refresh_tree()
+            return
+
+        # 非管理模式：删当前选中行
+        sel = self.tree.selection()
         if not sel:
             messagebox.showwarning("提示", "请先选中要删除的账号。")
             return
-        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个账号吗？"):
+        qq = sel[0]
+        if not messagebox.askyesno("确认", f"确定删除账号：{qq} ？"):
             return
-        for idx in reversed(sel):
-            del self.receivers[idx]
+        self.receivers.remove(qq)
         self.persist()
-        self.refresh_listbox()
+        self.refresh_tree()
 
     def toggle_manage(self):
-        # 先做“逻辑上的管理模式”（你 UI 的勾选框后面再升级）
         self.manage_mode = not self.manage_mode
         self.btn_manage.config(text="退出管理" if self.manage_mode else "管理")
 
+        if not self.manage_mode:
+            # 退出管理时清空勾选（按你设计也可以保留）
+            self.checked.clear()
+
+        self.refresh_tree()
+
     def toggle_select_all(self):
-        n = self.listbox.size()
-        if n == 0:
+        if not self.manage_mode:
+            messagebox.showinfo("提示", "请先点击“管理”进入勾选模式。")
             return
-        if len(self.listbox.curselection()) == n:
-            self.listbox.selection_clear(0, tk.END)
+
+        if len(self.checked) == len(self.receivers):
+            self.checked.clear()
         else:
-            self.listbox.selection_set(0, tk.END)
+            self.checked = set(self.receivers)
+
+        self.refresh_tree()
 
     def start_run(self):
-        # 第二页面后面再接：这里先留接口，避免你流程断掉
-        messagebox.showinfo("提示", "运行窗口（第二页面）还未实现。先把主页面做完整。")
+        from .run_window import RunWindow
+        self.withdraw()          # 隐藏主窗口
+        RunWindow(self)          # 打开运行窗口
+
 
     def show_help(self):
         messagebox.showinfo(
@@ -124,3 +176,33 @@ class MainWindow(tk.Tk):
     def on_close(self):
         if messagebox.askyesno("确认", "确定退出程序？"):
             self.destroy()
+
+    def on_tree_click(self, event):
+        # identify column/row
+        region = self.tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        col = self.tree.identify_column(event.x)  # '#1' 是第一列
+        row = self.tree.identify_row(event.y)     # iid
+
+        if not row:
+            return
+
+        # 非管理模式：允许正常选择行
+        if not self.manage_mode:
+            return
+
+        # 管理模式：只在第一列点击才切换勾选
+        if col in ("#1", "#2"):  # 你可以选择只在 "#1" 列（勾选列）切换，或者两列都切换
+            qq = row
+            if qq in self.checked:
+                self.checked.remove(qq)
+            else:
+                self.checked.add(qq)
+
+            # 只更新这一行显示也行；简单起见直接刷新
+            self.refresh_tree()
+            self.tree.selection_set(row)  # 切换勾选后顺便选中行，方便用户知道哪个被操作了
+
+
