@@ -81,8 +81,8 @@ def main():
     today_12 = now_cn.replace(hour=12, minute=0, second=0, microsecond=0)
 
     # 如果现在还没到12点，那么“今天12点”其实是未来；按你的业务一般是到点触发
-    # 但为了手动运行也合理：若当前<12点，就用“昨天12点~今天12点(当前日期)”这个窗口
-    end = now_cn
+    # 但为了手动运行也合理：若当前<12点，就用“昨天12点~今天24点(当前日期)”这个窗口
+    end = today_12 + timedelta(hours=12)
     start = today_12 - timedelta(days=1)
 
     parsed_rows: List[Tuple[datetime, str]] = []
