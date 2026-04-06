@@ -19,7 +19,23 @@ class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("瓦罗兰特比赛记录")
-        self.geometry("720x480")
+        # 不强制固定高度，避免在高 DPI/字体缩放下底部按钮被裁切
+        # 设定一个合理的最小尺寸，并允许窗口自适应内容/可拉伸
+        self.minsize(720, 520)
+        try:
+            # 初始大小给大一些，但仍可由用户拖拽调整
+            self.geometry("820x620")
+        except Exception:
+            pass
+
+        # Root 使用 grid，保证顶部/中部/底部三块区域按权重伸缩
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        root = tk.Frame(self)
+        root.grid(row=0, column=0, sticky="nsew")
+        root.grid_rowconfigure(2, weight=1)  # 中间区域占据剩余空间
+        root.grid_columnconfigure(0, weight=1)
 
         # 数据
         self.receivers = load_receivers(RECEIVERS_FILE)
@@ -30,12 +46,13 @@ class MainWindow(tk.Tk):
         self.token_var = tk.StringVar(value=token or "")
 
         # ---- UI: 标题 ----
-        title = tk.Label(self, text="瓦罗兰特比赛记录", font=("Microsoft YaHei", 20, "bold"))
-        title.pack(pady=(20, 10))
+        title = tk.Label(root, text="瓦罗兰特比赛记录", font=("Microsoft YaHei", 20, "bold"))
+        title.grid(row=0, column=0, sticky="ew", pady=(20, 10))
 
         # ---- UI: OneBot 配置（标题下方）----
-        cfg = tk.LabelFrame(self, text="NapCat / OneBot11 配置")
-        cfg.pack(fill=tk.X, padx=20, pady=(0, 10))
+        cfg = tk.LabelFrame(root, text="NapCat / OneBot11 配置")
+        cfg.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
+        cfg.grid_columnconfigure(0, weight=1)
 
         row1 = tk.Frame(cfg)
         row1.pack(fill=tk.X, padx=10, pady=(8, 4))
@@ -52,15 +69,19 @@ class MainWindow(tk.Tk):
         tk.Button(btn_row, text="保存配置", command=self.save_onebot_ui).pack(side=tk.RIGHT)
 
         # ---- UI: 中间区域（列表 + 按钮）----
-        mid = tk.Frame(self)
-        mid.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        mid = tk.Frame(root)
+        mid.grid(row=2, column=0, sticky="nsew", padx=20, pady=10)
+        mid.grid_rowconfigure(0, weight=1)
+        mid.grid_columnconfigure(0, weight=1)
 
         # 左：账号列表
         self.manage_mode = False
         self.checked = set()  # 存 receiver 字符串
 
         tree_wrap = tk.Frame(mid)
-        tree_wrap.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_wrap.grid(row=0, column=0, sticky="nsew")
+        tree_wrap.grid_rowconfigure(0, weight=1)
+        tree_wrap.grid_columnconfigure(0, weight=1)
 
         self.tree = ttk.Treeview(
             tree_wrap,
@@ -76,15 +97,15 @@ class MainWindow(tk.Tk):
         ysb = ttk.Scrollbar(tree_wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=ysb.set)
 
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ysb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
 
         # 点击切换勾选
         self.tree.bind("<Button-1>", self.on_tree_click)
 
         # 右：操作按钮
         op = tk.Frame(mid, width=200)
-        op.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
+        op.grid(row=0, column=1, sticky="ns", padx=(12, 0))
 
         tk.Button(op, text="增加", command=self.add_receiver).pack(fill=tk.X, pady=(0, 8))
         tk.Button(op, text="删除", command=self.delete_selected).pack(fill=tk.X, pady=8)
@@ -97,13 +118,16 @@ class MainWindow(tk.Tk):
         self.btn_select_all.pack(fill=tk.X, pady=8)
 
         # ---- UI: 底部区域（开始运行 + 帮助）----
-        bottom = tk.Frame(self)
-        bottom.pack(fill=tk.X, padx=20, pady=(10, 20))
+        bottom = tk.Frame(root)
+        bottom.grid(row=3, column=0, sticky="ew", padx=20, pady=(10, 20))
+        bottom.grid_columnconfigure(0, weight=1)
 
-        tk.Button(bottom, text="开始运行", height=2, command=self.start_run).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10)
+        tk.Button(bottom, text="开始运行", height=2, command=self.start_run).grid(
+            row=0, column=0, sticky="ew", padx=(0, 10)
         )
-        tk.Button(bottom, text="帮助", height=2, command=self.show_help).pack(side=tk.RIGHT)
+        tk.Button(bottom, text="帮助", height=2, command=self.show_help).grid(
+            row=0, column=1, sticky="e"
+        )
 
         # 初始化列表
         self.refresh_tree()
