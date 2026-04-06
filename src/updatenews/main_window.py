@@ -2,10 +2,17 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from tkinter import ttk
 
-from .storage import load_receivers, save_receivers
+from .storage import (
+    load_onebot_config,
+    load_receivers,
+    save_onebot_config,
+    save_receivers,
+)
 
 
 RECEIVERS_FILE = "receivers.json"
+ONEBOT_FILE = "onebot_config.json"
+DEFAULT_BASE_URL = "http://127.0.0.1:3000"
 
 
 class MainWindow(tk.Tk):
@@ -17,9 +24,32 @@ class MainWindow(tk.Tk):
         # 数据
         self.receivers = load_receivers(RECEIVERS_FILE)
 
+        # OneBot 配置
+        base_url, token = load_onebot_config(ONEBOT_FILE)
+        self.base_url_var = tk.StringVar(value=base_url or DEFAULT_BASE_URL)
+        self.token_var = tk.StringVar(value=token or "")
+
         # ---- UI: 标题 ----
         title = tk.Label(self, text="瓦罗兰特比赛记录", font=("Microsoft YaHei", 20, "bold"))
         title.pack(pady=(20, 10))
+
+        # ---- UI: OneBot 配置（标题下方）----
+        cfg = tk.LabelFrame(self, text="NapCat / OneBot11 配置")
+        cfg.pack(fill=tk.X, padx=20, pady=(0, 10))
+
+        row1 = tk.Frame(cfg)
+        row1.pack(fill=tk.X, padx=10, pady=(8, 4))
+        tk.Label(row1, text="base_url：", width=10, anchor="e").pack(side=tk.LEFT)
+        tk.Entry(row1, textvariable=self.base_url_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        row2 = tk.Frame(cfg)
+        row2.pack(fill=tk.X, padx=10, pady=4)
+        tk.Label(row2, text="token：", width=10, anchor="e").pack(side=tk.LEFT)
+        tk.Entry(row2, textvariable=self.token_var, show="*").pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        btn_row = tk.Frame(cfg)
+        btn_row.pack(fill=tk.X, padx=10, pady=(4, 8))
+        tk.Button(btn_row, text="保存配置", command=self.save_onebot_ui).pack(side=tk.RIGHT)
 
         # ---- UI: 中间区域（列表 + 按钮）----
         mid = tk.Frame(self)
@@ -94,6 +124,21 @@ class MainWindow(tk.Tk):
 
     def persist(self):
         save_receivers(RECEIVERS_FILE, self.receivers)
+
+    def save_onebot_ui(self):
+        base_url = (self.base_url_var.get() or "").strip()
+        token = (self.token_var.get() or "").strip()
+
+        if not base_url:
+            base_url = DEFAULT_BASE_URL
+            self.base_url_var.set(base_url)
+
+        if not (base_url.startswith("http://") or base_url.startswith("https://")):
+            messagebox.showwarning("提示", "base_url 需要以 http:// 或 https:// 开头")
+            return
+
+        save_onebot_config(ONEBOT_FILE, base_url, token)
+        messagebox.showinfo("提示", "OneBot 配置已保存。")
 
     # ---------- 按钮行为 ----------
     def add_receiver(self):
