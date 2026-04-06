@@ -7,6 +7,8 @@ from datetime import timezone, timedelta, datetime
 
 from .fetch import default_daily_window, get_matches_in_window
 from .formatter import team_short, status_text
+from .notifier import OneBot11Client, OneBot11Config, format_daily_report, send_report_to_receivers
+from .storage import load_onebot_config, load_receivers
 
 TZ_CN = timezone(timedelta(hours=8))
 
@@ -60,6 +62,9 @@ class RunWindow(tk.Toplevel):
 
         self.btn_fetch = tk.Button(right, text="抓取", command=self.fetch_once_async)
         self.btn_fetch.pack(fill=tk.X, padx=10, pady=6)
+
+        self.btn_send = tk.Button(right, text="发送日报", command=self.send_daily_report_async)
+        self.btn_send.pack(fill=tk.X, padx=10, pady=6)
 
         self.btn_back = tk.Button(right, text="返回主页面", command=self.back_to_main)
         self.btn_back.pack(fill=tk.X, padx=10, pady=6)
@@ -149,6 +154,52 @@ class RunWindow(tk.Toplevel):
 
         threading.Thread(target=job, daemon=True).start()
 
+    def send_daily_report_async(self):
+        """按计划书：抓取 -> 生成纯文本 -> 给 receivers.json 里的每个QQ私聊发送。"""
+
+        def job():
+            now_cn = datetime.now(TZ_CN)
+            try:
+                # 1) 抓取
+                start, end = default_daily_window()
+                self.log(
+                    f"开始发送日报：窗口 {start:%Y-%m-%d %H:%M} ~ {end:%Y-%m-%d %H:%M}, 触发时间 {now_cn:%Y-%m-%d %H:%M}"
+                )
+                matches = get_matches_in_window(start, end)
+
+                # 2) 生成文本
+                report = format_daily_report(matches, start, end)
+
+                # 3) 读取接收方
+                receivers = load_receivers("receivers.json")
+                if not receivers:
+                    self.log("receivers.json 为空：没有接收方QQ，跳过发送。")
+                    return
+
+                # 4) 读取 OneBot 配置
+                base_url, token = load_onebot_config("onebot_config.json")
+                if not base_url or not token:
+                    self.log("onebot_config.json 未配置完整：请填写 base_url 和 token。")
+                    return
+
+                client = OneBot11Client(OneBot11Config(base_url=base_url, token=token))
+
+                # 5) 逐个发送并输出结果
+                results = send_report_to_receivers(client, receivers, report)
+                ok_count = sum(1 for _, ok, _ in results if ok)
+                fail_count = len(results) - ok_count
+                self.log(f"发送完成：成功 {ok_count}，失败 {fail_count}")
+                for r, ok, msg in results:
+                    if ok:
+                        self.log(f"  [OK] {r}")
+                    else:
+                        self.log(f"  [FAIL] {r} -> {msg}")
+
+            except Exception as e:
+                self.log(f"发送日报失败：{e}")
+
+        threading.Thread(target=job, daemon=True).start()
+
     # ---------------- 自动循环：先每60秒一次（后续可换每天12点） ----------------
     def start_auto_loop(self):
         def loop():
@@ -175,7 +226,8 @@ class RunWindow(tk.Toplevel):
                     # 睡醒后再校准一次时间：防止系统休眠/时间漂移
                     now_cn = datetime.now(TZ_CN)
                     if now_cn >= nxt and not self.paused:
-                        self.fetch_once_async()
+                        # 到点执行：按计划发送（抓取+格式化+QQ私聊）
+                        self.send_daily_report_async()
                     break  # 触发一次后，重新计算下一次 12:00
 
         threading.Thread(target=loop, daemon=True).start()
@@ -198,6 +250,7 @@ class RunWindow(tk.Toplevel):
             "帮助",
             "停止/继续：暂停或恢复自动抓取循环\n"
             "抓取：立即抓取一次并输出\n"
+            "发送日报：立即执行一次“抓取→生成文本→私聊发送”\n"
             "返回主页面：关闭运行窗口并回到主窗口\n"
         )
 
