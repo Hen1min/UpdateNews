@@ -13,23 +13,15 @@ from .storage import load_onebot_config, load_receivers
 TZ_CN = timezone(timedelta(hours=8))
 
 
-def next_noon_cn(now: datetime) -> datetime:
-    """
-    给定北京时间 now，返回下一次 12:00（如果现在 < 12:00，返回今天12:00；否则返回明天12:00）
-    """
-    today_noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
-    if now < today_noon:
-        return today_noon
-    return today_noon + timedelta(days=1)
+def next_1400_cn(now: datetime) -> datetime:
+
+    today_1400 = now.replace(hour=14, minute=0, second=0, microsecond=0)
+    if now < today_1400:
+        return today_1400
+    return today_1400 + timedelta(days=1)
 
 
 class RunWindow(tk.Toplevel):
-    """
-    第二页面：运行窗口
-    - 左侧输出台：Text
-    - 右侧：停止/继续、抓取、返回主页面、帮助
-    - 后台线程定时触发抓取（先用每60秒一次；你后面再改成每天12:00）
-    """
 
     def __init__(self, master: tk.Tk):
         super().__init__(master)
@@ -206,7 +198,7 @@ class RunWindow(tk.Toplevel):
             # 启动时先输出“下一次触发时间”
             while self.running:
                 now_cn = datetime.now(TZ_CN)
-                nxt = next_noon_cn(now_cn)
+                nxt = next_1400_cn(now_cn)
                 wait_seconds = (nxt - now_cn).total_seconds()
 
                 self.log(f"下一次自动抓取时间：{nxt:%Y-%m-%d %H:%M}（北京时间）")
