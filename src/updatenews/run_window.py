@@ -7,7 +7,12 @@ from datetime import timezone, timedelta, datetime
 
 from .fetch import default_daily_window, get_matches_in_window
 from .formatter import team_short, status_text
-from .notifier import OneBot11Client, OneBot11Config, format_daily_report, send_report_to_receivers
+from .notifier import (
+    OneBot11Client,
+    OneBot11Config,
+    format_daily_report,
+    send_report_to_receivers,
+)
 from .storage import load_onebot_config, load_receivers
 
 TZ_CN = timezone(timedelta(hours=8))
@@ -26,6 +31,9 @@ class RunWindow(tk.Toplevel):
     - 自动：每天 14:00 发送“日报”（抓取->格式化->QQ私聊）
     - 默认功能（无需按钮）：启动后抓取一次，把“未开始”比赛加入提醒队列；
       后台线程每 10 秒检查一次，到开赛前 5 分钟给 receivers.json 发送提醒
+
+    改动点（按你的要求）：
+    - 每次“抓取”都会自动刷新提醒队列（只会把“未开始”的比赛入队）
     """
 
     def __init__(self, master: tk.Tk):
@@ -62,7 +70,12 @@ class RunWindow(tk.Toplevel):
         self.btn_pause = tk.Button(right, text="停止", command=self.toggle_pause)
         self.btn_pause.pack(fill=tk.X, padx=10, pady=(12, 6))
 
-        self.btn_fetch = tk.Button(right, text="抓取", command=self.fetch_once_async)
+        # 关键：抓取按钮也刷新提醒队列
+        self.btn_fetch = tk.Button(
+            right,
+            text="抓取",
+            command=lambda: self.fetch_once_async(build_reminders=True),
+        )
         self.btn_fetch.pack(fill=tk.X, padx=10, pady=6)
 
         self.btn_send = tk.Button(right, text="发送日报", command=self.send_daily_report_async)
@@ -86,7 +99,7 @@ class RunWindow(tk.Toplevel):
         # 启动后台“日报”的自动循环
         self.start_auto_loop()
 
-        # 启动即抓取一次：既展示数据，也构建提醒队列（选1）
+        # 启动即抓取一次：既展示数据，也构建提醒队列
         self.fetch_once_async(build_reminders=True)
 
         self.log("运行窗口已启动。点击“抓取”可立即获取一次。")
@@ -136,10 +149,12 @@ class RunWindow(tk.Toplevel):
 
         return f"{time_part}{extra} | {title} | {a} {score_a}:{score_b} {b} | {st} | bMatchId={bmatch_id}"
 
-    def fetch_once_async(self, build_reminders: bool = False):
+    def fetch_once_async(self, build_reminders: bool = True):
         """
         抓取一次并输出。
-        build_reminders=True 时：用抓取结果更新提醒队列（选1：只在启动时那次抓取用 True）
+
+        按你的要求：默认 build_reminders=True
+        - 手动点“抓取”也会刷新提醒队列
         """
         # 防止疯狂连点：把按钮暂时禁用
         self.btn_fetch.config(state="disabled")
@@ -154,6 +169,10 @@ class RunWindow(tk.Toplevel):
                 matches = get_matches_in_window(start, end)
                 if not matches:
                     self.log("本时间窗内没有比赛。")
+                    # 抓取为空时也刷新队列：清空（避免保留旧的提醒队列误导）
+                    if build_reminders:
+                        self.reminder_queue = []
+                        self.log("提醒队列已更新：0 场未开始比赛（开赛前5分钟提醒）")
                     return
 
                 for m in matches:
@@ -260,7 +279,7 @@ class RunWindow(tk.Toplevel):
         messagebox.showinfo(
             "帮助",
             "停止/继续：暂停或恢复“日报”自动循环（提醒功能不受影响）\n"
-            "抓取：立即抓取一次并输出\n"
+            "抓取：立即抓取一次并输出（并刷新提醒队列）\n"
             "发送日报：立即执行一次“抓取→生成文本→私聊发送”\n"
             "默认提醒：程序启动后会将未开始比赛加入队列，并在开赛前5分钟自动提醒\n"
             "返回主页面：关闭运行窗口并回到主窗口\n"
@@ -272,11 +291,10 @@ class RunWindow(tk.Toplevel):
         self.running = False
         self.master.destroy()
 
-    # ---------------- 提醒功能（功能1：选1） ----------------
+    # ---------------- 提醒功能 ----------------
     def update_reminder_queue(self, matches: list[dict]):
         """
         从抓取到的 matches 中筛出“未开始”的比赛，建立提醒队列。
-        选1：只在启动时抓取那一次build_reminders=True时进来。
         """
         q = []
         now = datetime.now(TZ_CN)
@@ -316,12 +334,15 @@ class RunWindow(tk.Toplevel):
         self.reminder_queue = q
         self.log(f"提醒队列已更新：{len(q)} 场未开始比赛（开赛前5分钟提醒）")
 
-        # 可选：打印前几条预览
+        # 打印前几条预览
         for remind_at, match_dt, bmid, m in q[:8]:
             title = m.get("bMatchName", "")
             a = team_short(m.get("teamA"), "TBD_A")
             b = team_short(m.get("teamB"), "TBD_B")
-            self.log(f"  预告入队：{match_dt:%m-%d %H:%M} | {title} | {a} vs {b} | remind@{remind_at:%m-%d %H:%M} | bMatchId={bmid}")
+            self.log(
+                f"  预告入队：{match_dt:%m-%d %H:%M} | {title} | {a} vs {b} | "
+                f"remind@{remind_at:%m-%d %H:%M} | bMatchId={bmid}"
+            )
 
     def start_reminder_loop(self):
         def loop():
@@ -345,7 +366,6 @@ class RunWindow(tk.Toplevel):
                         receivers = load_receivers("receivers.json")
                         if not receivers:
                             self.log("提醒发送跳过：receivers.json 为空（没有接收方QQ）。")
-                            # 不标记已提醒，避免之后用户补上接收方仍能提醒
                             continue
 
                         # 读取 OneBot 配置
@@ -368,7 +388,7 @@ class RunWindow(tk.Toplevel):
                             else:
                                 self.log(f"  [FAIL] {r} -> {msg}")
 
-                        # 发送完成才标记（无论部分失败/部分成功，都避免无限重发刷屏）
+                        # 发送完成才标记（避免无限重发刷屏）
                         self.reminded_ids.add(bmid)
 
                     time.sleep(10)

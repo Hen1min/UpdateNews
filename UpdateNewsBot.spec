@@ -3,7 +3,7 @@
 
 a = Analysis(
     ['src\\updatenews\\ui_app.py'],
-    pathex=[],
+    pathex=['src'],
     binaries=[],
     datas=[('receivers.json', '.'), ('onebot_config.json', '.')],
     hiddenimports=[],
